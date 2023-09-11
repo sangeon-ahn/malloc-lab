@@ -79,7 +79,7 @@ team_t team = {
 static char* mem_heap; // 힙의 첫 바이트주소
 static char* mem_brk; // 힙의 마지막 바이트주소 + 1
 static char* mem_max_addr; // 가능한 최대 힙 주소 + 1
-// static char* break_point; // next_fit 용 bp
+static char* break_point = NULL; // next_fit 용 bp
 /* 
  * mm_init - initialize the malloc package.
  */
@@ -92,6 +92,7 @@ static void* coalesce(void* bp) {
     
     // 이전, 다음 블록 모두 할당되어 있었으면 할거 없으니 그냥 bp 반환
     if (is_prev_allocated && is_next_allocated) {
+        break_point = bp;
         return bp;
     }
 
@@ -120,6 +121,7 @@ static void* coalesce(void* bp) {
         bp = PREV_BLKP(bp);
     }
 
+    break_point = bp;
     return bp;
 }
 
@@ -135,7 +137,7 @@ static void* extend_heap(size_t words) {
     if ((long)(bp = mem_sbrk(size)) == -1) {
         return NULL;
     }
-
+    // break_point = bp;
     /* 프리블록 헤더푸터와 에필로드 헤더 초기화 */
     PUT(HDRP(bp), PACK(size, 0)); // 헤더위치에 사이즈랑 free 상태 넣기
     PUT(FTRP(bp), PACK(size, 0)); // 푸터위치에 사이즈랑 free 상태 넣기
@@ -160,7 +162,6 @@ int mm_init(void)
     PUT(mem_heap + (3*WSIZE), PACK(0, 1)); // 에필로그 헤더, 크기 = 0, 할당비트 = 1, 1워드
 
     mem_heap += (2*WSIZE);
-    // break_point = mem_heap;
 
     /* 빈 힙을 CHUNKSIZE만큼 프리블록 만들어줌 */
     if (extend_heap(CHUNKSIZE/WSIZE) == NULL) {
@@ -184,21 +185,28 @@ static void* find_fit(size_t adjusted_size) {
     // 다음거 가는법: 현재 헤더에 적혀있는 블록 크기값+ 현재 bp
 
     // 초기 mem_heap 위치= 프롤로그 블록의 페이로드 시작주소
-    char* temp_point = mem_heap;
+    // char* temp_point = break_point;
 
     // 에필로그에 도달했을 때 탈출, 에필로그 도달조건: sz == 0 and is_alled = 1, 반대 = sz != 0 || is_alled != 1
-    while (GET_SIZE(HDRP(temp_point)) != 0 || GET_ALLOC(HDRP(temp_point)) != 1) {
-        // free이고, 크기도 더 크면 맞다.
-        if (GET_ALLOC(HDRP(temp_point)) == 0 && GET_SIZE(HDRP(temp_point)) >= adjusted_size) {
-            // break_point = temp_point;
-            return (void*)temp_point;
-        }
-
-        // // 여기 아닐 때,
-        // else {
-            temp_point = NEXT_BLKP(temp_point);
-        // }
+    if (break_point == NULL) {
+        break_point = mem_heap;
     }
+    void *bp;
+    
+
+    for (bp = break_point; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
+        if (!GET_ALLOC(HDRP(bp)) && (adjusted_size <= GET_SIZE(HDRP(bp)))) {
+            break_point = bp;
+            return bp;
+        }
+    }
+    
+    for (bp = mem_heap; bp != break_point; bp = NEXT_BLKP(bp)) {
+        if (!GET_ALLOC(HDRP(bp)) && (adjusted_size <= GET_SIZE(HDRP(bp)))) {
+            return bp;
+        }
+    }
+
     return NULL;
 }
 
@@ -227,6 +235,7 @@ static void place(void *bp, size_t adjusted_size) {
         // 더 작을 때, 다음 블록의 페이로드를 가리키게 함, 에필로그인 경우에는, 에필로그 헤더 이후 페이로드 주소부분을 가리키게 되서 힙을 벗어나지만, 이후 find함수 호출시 HDRP 매크로로 구할 때 wsize만큼 빼주므로 에필로그의 헤더에 접근할 수 있다.
         // break_point = NEXT_BLKP(bp);
     }
+    break_point = bp;
 }
 
 void *mm_malloc(size_t size)
@@ -253,6 +262,7 @@ void *mm_malloc(size_t size)
 
     // free list에서 asize만큼의 자유 공간을 찾았으면 배치
     if ((bp = find_fit(adjusted_size)) != NULL) {
+        // break_point = bp;
         place(bp, adjusted_size);
         return bp;
     }
@@ -262,6 +272,7 @@ void *mm_malloc(size_t size)
     if ((bp = extend_heap(extend_size/WSIZE)) == NULL) {
         return NULL;
     }
+    // break_point = bp;
     place(bp, adjusted_size);
     return bp;
 }
