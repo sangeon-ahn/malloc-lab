@@ -303,26 +303,6 @@ void *mm_realloc(void *ptr, size_t size)
         return ptr;
     }
 
-    // // 현재 블록에서 size만큼 뺀값이 최소 free블록 크기인 8보다 클 때  
-    // if (cur_block_size - size >= MIN_BLOCK_SIZE) {
-    //     // 헤더푸터 갱신하고
-    //     PUT(HDRP(ptr), PACK(size, 1));
-    //     PUT(FTRP(ptr), PACK(size, 1));
-        
-    //     // 다음블록 프리시키기
-    //     PUT(HDRP(NEXT_BLKP(ptr)), PACK(cur_block_size - size, 0));
-    //     PUT(FTRP(NEXT_BLKP(ptr)), PACK(cur_block_size - size, 0));
-
-    //     // 병합 가능하면 하기
-    //     coalesce(NEXT_BLKP(ptr));
-    //     return ptr;
-    // }
-
-    // // 남은게 1 ~ 7인 경우
-    // if (1 <= cur_block_size - size && cur_block_size - size <= 7) {
-    //     return ptr;
-    // }
-
     // size가 더 큼
     // 다음 블록이 free일 때,
     if (GET_ALLOC(HDRP(NEXT_BLKP(ptr))) == 0 && cur_block_size > size) {

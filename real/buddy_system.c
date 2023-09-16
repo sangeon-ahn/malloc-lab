@@ -480,24 +480,61 @@ void mm_free(void *ptr)
  *  by using reallocation tags
  *  in reallocation cases (realloc-bal.rep, realloc2-bal.rep)
  */
-
-
-
 void *mm_realloc(void *ptr, size_t size)
 {
-    void *oldptr = ptr;
-    void *newptr;
-    size_t copySize;
+    void *new_ptr = ptr;    /* Pointer to be returned */
+    size_t new_size = size; /* Size of new block */
+    int remainder;          /* Adequacy of block sizes */
+    int extendsize;         /* Size of heap extension */
+    int block_buffer;       /* Size of block buffer */
     
-    int a = ALIGN(sizeof(size_t));
+    // Ignore size 0 cases
+    if (size == 0)
+        return NULL;
     
-    newptr = mm_malloc(size);
-    if (newptr == NULL)
-      return NULL;
-    copySize = *(size_t *)((char *)oldptr - WSIZE) - 1; // oldptr은 payload를 가리키고, 헤더를 가려면 -4 해야함, 여기엔 할당비트 포함되어 있으므로 -1 해줘서 해당 할당블록의 크기를 구함 
-    if (size < copySize)
-      copySize = size;
-    memcpy(newptr, oldptr, copySize);
-    mm_free(oldptr);
-    return newptr;
-} 
+    // Align block size
+    if (new_size <= DSIZE) {
+        new_size = 2 * DSIZE;
+    } else {
+        new_size = ALIGN(size+DSIZE);
+    }
+    
+    /* Add overhead requirements to block size */
+    new_size += REALLOC_BUFFER;
+    
+    /* Calculate block buffer */
+    block_buffer = GET_SIZE(HDRP(ptr)) - new_size;
+    
+    /* Allocate more space if overhead falls below the minimum */
+    if (block_buffer < 0) {
+        /* Check if next block is a free block or the epilogue block */
+        if (!GET_ALLOC(HDRP(NEXT_BLKP(ptr))) || !GET_SIZE(HDRP(NEXT_BLKP(ptr)))) {
+            remainder = GET_SIZE(HDRP(ptr)) + GET_SIZE(HDRP(NEXT_BLKP(ptr))) - new_size;
+            if (remainder < 0) {
+                extendsize = MAX(-remainder, CHUNKSIZE);
+                if (extend_heap(extendsize) == NULL)
+                    return NULL;
+                remainder += extendsize;
+            }
+            
+            delete_node(NEXT_BLKP(ptr));
+            
+            // Do not split block
+            PUT_NOTAG(HDRP(ptr), PACK(new_size + remainder, 1)); 
+            PUT_NOTAG(FTRP(ptr), PACK(new_size + remainder, 1)); 
+        } else {
+            new_ptr = mm_malloc(new_size - DSIZE);
+            memcpy(new_ptr, ptr, MIN(size, new_size));
+            mm_free(ptr);
+        }
+        block_buffer = GET_SIZE(HDRP(new_ptr)) - new_size;
+    }
+    
+    // Tag the next block if block overhead drops below twice the overhead 
+    if (block_buffer < 2 * REALLOC_BUFFER)
+        SET_RATAG(HDRP(NEXT_BLKP(new_ptr)));
+    
+    // Return the reallocated block 
+    return new_ptr;
+}
+
